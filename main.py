@@ -6,20 +6,22 @@ from aiogram import Bot, Dispatcher, executor, types
 from bot_manager import BotManager
 from db_manager import DbManager
 from game_manager import DiceGame
+from user_manager import UserManagerUser
 from utils import logging
 
-API_TOKEN = BotManager().get_token()
-db = DbManager()
+bot = Bot(token=BotManager().get_token())
 
-bot = Bot(token=API_TOKEN)
+db = DbManager()
 dp = Dispatcher(bot)
+user = UserManagerUser()
 
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.message):
     user_data = message.from_user
     logging.info(f'Бот поздоровался с пользователем: {user_data.mention, user_data.id}')
-    if await db.checking_registration(user_data) is True:
+    user.registration = await db.checking_registration(user_data)
+    if user.registration is True:
         if user_data.language_code != 'ru':
             await message.answer("Hi!\n"
                                  "You have successfully logged in\n"
@@ -30,37 +32,55 @@ async def send_welcome(message: types.message):
                              f'Теперь я твой ежедневник\n'
                              f'Чтобы посмотреть список комманд используй: /help')
     else:
-        await db.register_user(user_data)
-        await message.answer(f'Вы успешно зарегистрировались!\n'
-                             f'Чтобы посмотреть список комманд используй: /help')
+        if await db.register_user(user_data) is True:
+            user.registration = True
+            await message.answer(f'Вы успешно зарегистрировались!\n'
+                                 f'Чтобы посмотреть список комманд используй: /help')
+        else:
+            await message.answer(f'Не удалось зарегистрироваться. Повторите попытку позднее!\n')
 
 
 @dp.message_handler(commands=['help'])
 async def help_commands(message: types.message):
-    await message.answer(f'(В разработке)Чтобы добавить запись о событии используйте: /add_event\n'
-                         f'(В разработке)Чтобы посмотреть все записи за все время используйте: /show_all_events\n'
-                         f'(В разработке)Чтобы создать напоминание о событии используйте: /add_reminder\n'
-                         f'Чтобы поиграть с ботом в кости используйте: /dice_game')
+    if user.registration is True:
+        await message.answer(f'(В разработке)Чтобы добавить запись о событии используйте: /add_event\n'
+                             f'(В разработке)Чтобы посмотреть все записи за все время используйте: /show_all_events\n'
+                             f'(В разработке)Чтобы создать напоминание о событии используйте: /add_reminder\n'
+                             f'Чтобы поиграть с ботом в кости используйте: /dice_game')
+    else:
+        await message.answer(f'Вам необходимо перезапустить бота и зарегистрироваться: /start\n')
 
 
 @dp.message_handler(commands=['add_event'])
 async def add_event(message: types.message):
-    await message.answer('В разработке')
+    if user.registration is True:
+        await message.answer('В разработке')
+    else:
+        await message.answer(f'Вам необходимо перезапустить бота и зарегистрироваться: /start\n')
 
 
 @dp.message_handler(commands=['show_all_events'])
 async def add_event(message: types.message):
-    await message.answer('В разработке')
+    if user.registration is True:
+        await message.answer('В разработке')
+    else:
+        await message.answer(f'Вам необходимо перезапустить бота и зарегистрироваться: /start\n')
 
 
 @dp.message_handler(commands=['add_reminder'])
 async def add_event(message: types.message):
-    await message.answer('В разработке')
+    if user.registration is True:
+        await message.answer('В разработке')
+    else:
+        await message.answer(f'Вам необходимо перезапустить бота и зарегистрироваться: /start\n')
 
 
 @dp.message_handler(commands=['dice_game'])
 async def dice_game(message: types.message):
-    await asyncio.gather(DiceGame.start_game(bot, message))
+    if user.registration is True:
+        await asyncio.gather(DiceGame.start_game(bot, message))
+    else:
+        await message.answer(f'Вам необходимо перезапустить бота и зарегистрироваться: /start\n')
 
 
 def main():
