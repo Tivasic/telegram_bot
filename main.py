@@ -1,14 +1,15 @@
 import asyncio
 import platform
-from asyncio import sleep
 
 from aiogram import Bot, Dispatcher, executor, types
 
 from bot_manager import BotManager
+from db_manager import DbManager
 from bot_games import DiceGame
 from utils import logging
 
 API_TOKEN = BotManager().get_token()
+db = DbManager()
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
@@ -16,16 +17,22 @@ dp = Dispatcher(bot)
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.message):
-    current_user = message.from_user
-    logging.info(f'Бот поздоровался с пользователем: {current_user.mention, current_user.id}')
-    if current_user.language_code != 'ru':
-        await message.answer("Hi!\n"
-                             "I'm Bot!\n"
-                             "All commands /help")
+    user_data = message.from_user
+    logging.info(f'Бот поздоровался с пользователем: {user_data.mention, user_data.id}')
+    if await db.checking_registration(user_data) is True:
+        if user_data.language_code != 'ru':
+            await message.answer("Hi!\n"
+                                 "You have successfully logged in\n"
+                                 "To view the list of commands, use: /help")
 
-    await message.answer(f'Привет\n'
-                         f'Теперь я твой ежедневник\n'
-                         f'Чтобы посмотреть список комманд используй: /help')
+        await message.answer(f'Привет!\n')
+        await message.answer(f'Вы успешно авторизовались!\n'
+                             f'Теперь я твой ежедневник\n'
+                             f'Чтобы посмотреть список комманд используй: /help')
+    else:
+        await db.register_user(user_data)
+        await message.answer(f'Вы успешно зарегистрировались!\n'
+                             f'Чтобы посмотреть список комманд используй: /help')
 
 
 @dp.message_handler(commands=['help'])
