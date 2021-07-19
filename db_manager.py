@@ -34,6 +34,9 @@ class DbManager:
             self._connection = None
 
     async def checking_registration(self, user_data):
+        if not self._connection:
+            logging.error("Не установлено соединение с БД")
+            return
         cursor = self._connection.cursor()
         uniquesql = '''SELECT * FROM users WHERE user_id=''' + str(user_data.id)
         cursor.execute(uniquesql)
