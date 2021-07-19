@@ -12,11 +12,11 @@ class DiceGame:
         await sleep(2)
         await message.answer('Бот кидает кубик!')
         await sleep(1)
-        bot_dice = await bot.send_dice(message.chat.id, allow_sending_without_reply=True)
+        bot_dice = await bot.send_dice(current_user.id, allow_sending_without_reply=True)
         await sleep(5)
         await message.answer('Вы кидаете кубик!')
         await sleep(1)
-        user_dice = await bot.send_dice(message.chat.id, allow_sending_without_reply=True)
+        user_dice = await bot.send_dice(current_user.id, allow_sending_without_reply=True)
         await sleep(5)
         if bot_dice['dice']['value'] > user_dice['dice']['value']:
             await message.answer('Вы проиграли!')
