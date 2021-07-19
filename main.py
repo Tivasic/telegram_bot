@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, executor, types
 
 from bot_manager import BotManager
 from db_manager import DbManager
-from bot_games import DiceGame
+from game_manager import DiceGame
 from utils import logging
 
 API_TOKEN = BotManager().get_token()
