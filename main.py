@@ -18,12 +18,6 @@ db = DbManager()
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 
-async def save_user_info(user, state: FSMContext = None):
-    async with state.proxy() as data:
-        user_data = data.get('user')
-        if user_data is None or user_data.registration != user.registration:
-            data['user'] = user
-
 
 @dp.message_handler(commands=['start'])
 @initialize_user_if_not_exists
