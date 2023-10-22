@@ -8,7 +8,7 @@ CONFIG_ENV: str = os.getenv('CONFIG_ENV', '')
 
 if not CONFIG_ENV:
     raise RuntimeError(
-        'What is your environment local, prod or qa. '
+        'What is your environment local or prod '
         'You need to specify an environment variable "export CONFIG_ENV=?"'
     )
 

@@ -1,5 +1,11 @@
 import asyncio
+import datetime
 import logging
+import uuid
+from threading import Thread
+
+import dateutil.parser
+from aiogram.types import Message
 
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -17,6 +23,11 @@ bot = Bot(token=config.TOKEN)
 db = DbManager()
 dp = Dispatcher(bot, storage=MemoryStorage())
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Создаем планировщик
+scheduler = AsyncIOScheduler(daemon=True)
+scheduler.start()
 
 
 @dp.message_handler(commands=['start'])
@@ -54,7 +65,7 @@ async def help_commands(message: types.Message, state: FSMContext, user: Manager
         if user.registration:
             await message.answer(f'(Бета)Чтобы добавить запись о событии используйте: /add_record\n'
                                  f'(Бета)Чтобы посмотреть все записи за все время используйте: /show_all_records\n'
-                                 f'(В будущем)Чтобы создать напоминание о событии используйте: /add_reminder\n'
+                                 f'(Бета)Чтобы создать напоминание о событии используйте: /add_reminder\n'
                                  f'Чтобы поиграть с ботом в кости используйте: /dice_game')
         else:
             await message.answer(f'Вам необходимо перезапустить бота и авторизоваться: /start\n')
@@ -99,13 +110,21 @@ async def show_all_records(message: types.Message, state: FSMContext, user: Mana
             "Произошла ошибка при выполнении команды /show_all_records. Пожалуйста, повторите попытку позднее.")
 
 
+async def send_reminder_job(message, reminder_text):
+    try:
+        await message.answer(f'Напоминание: {reminder_text}')
+        logger.info("Уведомление успешно отправлено")
+    except Exception as e:
+        logger.error(f'Ошибка при отправке уведомления {e}')
+
+
 @dp.message_handler(commands=['add_reminder'])
 @initialize_user_if_not_exists
 @update_user_data_on_completion
 async def add_reminder(message: types.Message, state: FSMContext, user: ManagerUser):
     try:
         if user.registration:
-            await message.answer('В разработке')
+            await user.reminder_record(message)
         else:
             await message.answer(f'Вам необходимо перезапустить бота и авторизоваться: /start\n')
 
@@ -133,10 +152,8 @@ async def dice_game(message: types.Message, state: FSMContext, user: ManagerUser
             "Произошла ошибка при выполнении команды /dice_game. Пожалуйста, повторите попытку позднее.")
 
 
-@dp.message_handler(state=MyDialog.waiting_answer_event)
-@initialize_user_if_not_exists
-@update_user_data_on_completion
-async def process_message(message: types.Message, state: FSMContext, user: ManagerUser):
+@dp.message_handler(state=MyDialog.waiting_reminder_event)
+async def process_reminder_message(message: types.Message, state: FSMContext):
     try:
         async with state.proxy() as data:
             data['text'] = message.text
@@ -148,10 +165,29 @@ async def process_message(message: types.Message, state: FSMContext, user: Manag
             elif user_message.find('/') != -1:
                 await message.answer(f'Введите сообщение правильно.\n')
                 return
-            await db.add_record(user_message, user)
-            await message.answer(f'Вы успешно добавили запись о событии. \n'
-                                 f'Чтобы посмотреть все ваши записи используйте: /show_all_records\n')
+
+            split_message = user_message.split('-')
+            text = split_message[0]
+            date = split_message[-1]
+            if not date or not text:
+                await message.answer(f'Введите сообщение в правильном формате!\n')
+                return
+            dt_date = dateutil.parser.parse(date)
+            dt_now = datetime.datetime.now()
+            if dt_date < dt_now:
+                await message.answer(f'Дата не может быть в прошлом времени!\n')
+                return
+
+            scheduler.add_job(
+                send_reminder_job,
+                'date',
+                run_date=dt_date,
+                args=[message, text],
+                id=str(uuid.uuid4()),
+            )
+
             await state.finish()
+            await message.answer(f'Напоминание успешно создано!\n')
     except Exception as ex:
         logger.exception("Ошибка в команде /add_record (ожидание ответа): %s", ex)
         await message.answer(
