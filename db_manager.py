@@ -1,114 +1,81 @@
-import configparser
 import datetime
+import logging
 
-import psycopg2
+import asyncpg as asyncpg
 
-from utils import logging
+from config import config
+
+logger = logging.getLogger(__name__)
 
 
 class DbManager:
-    """
-    Класс, осуществляющий запись данных в БД
-    """
-
     def __init__(self):
-        config = configparser.ConfigParser()
-        config.read('bot_settings.conf')
-        self._host = config['DATABASE']['DB_HOST']
+        self._pool = None
 
-        self._db_name = config['DATABASE']['DB_NAME']
-        self._username = config['DATABASE']['DB_USERNAME']
-        self._password = config['DATABASE']['DB_PASSWORD']
-
+    async def connect(self):
         try:
-            self._connection = psycopg2.connect(
-                host=self._host,
-                database=self._db_name,
-                user=self._username,
-                password=self._password
+            self._pool = await asyncpg.create_pool(
+                host=config.DB_HOST,
+                database=config.DB_NAME,
+                user=config.DB_USERNAME,
+                password=config.DB_PASSWORD
             )
-        except psycopg2.InterfaceError as ex:
-            logging.error(ex)
-            self._connection = None
-        except psycopg2.OperationalError as ex:
-            logging.error(ex)
-            self._connection = None
+        except (asyncpg.InterfaceError, asyncpg.exceptions.ConnectionDoesNotExistError) as ex:
+            logger.error(ex)
+
+    async def close(self):
+        if self._pool:
+            await self._pool.close()
+
+    async def execute_query(self, query, *params):
+        if not self._pool:
+            logger.error("Не установлено соединение с БД")
+            return False
+
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                result = await connection.fetch(query, *params)
+                return result
 
     async def checking_registration(self, user):
-        if not self._connection:
-            logging.error("Не установлено соединение с БД")
-            return
-        cursor = self._connection.cursor()
-        uniquesql = '''SELECT * FROM users WHERE user_id=''' + str(user.id)
-        cursor.execute(uniquesql)
-        row = cursor.fetchall()
-        if row:
-            logging.debug(f'Пользователь: {user.mention, user.id} зарегистрирован')
-            return True
+        query = 'SELECT * FROM users WHERE id = $1'
+        result = await self.execute_query(query, user.id)
+        return bool(result)
 
     async def register_user(self, user):
-        if not self._connection:
-            logging.error("Не установлено соединение с БД")
-            return
-        if user.registration is True:
+        if user.registration:
             return True
-        tsql = '''INSERT INTO users(user_id, first_name, last_name) VALUES (%s, %s, %s)'''
 
-        user_id = user.id
-        first_name = user.first_name
-        last_name = user.last_name
-        cursor = self._connection.cursor()
-
+        query = 'INSERT INTO users(id, first_name, last_name) VALUES($1, $2, $3)'
+        params = (user.id, user.first_name, user.last_name)
         try:
-            cursor.execute(tsql, (user_id, first_name, last_name))
-            self._connection.commit()
-            logging.debug(f'Пользователь: {user.mention, user.id} зарегистрировался')
-
-        except psycopg2.DatabaseError as ex:
-            logging.error(ex, user)
-            return
-        return True
+            await self.execute_query(query, *params)
+            logger.debug(f'Пользователь: {user.mention, user.id} зарегистрировался')
+            return True
+        except asyncpg.exceptions.PostgresError as ex:
+            logger.error(ex)
+            return False
 
     async def add_record(self, text_record, user):
-        if not self._connection:
-            logging.error("Не установлено соединение с БД")
-            return
-        if user.registration is True:
-            tsql = '''INSERT INTO records(text_record, date_published, user_id_fk)
-             VALUES (%s, %s, (SELECT id from users WHERE user_id=%s))'''
+        if not user.registration:
+            return False
 
-            user_id = user.id
-            date_published = datetime.datetime.now()
-            cursor = self._connection.cursor()
-
-            try:
-                cursor.execute(tsql, (text_record, date_published, user_id))
-                self._connection.commit()
-                logging.debug(f'Пользователь: {user.mention, user.id} успешно добавил запись о событии')
-
-            except psycopg2.DatabaseError as ex:
-                logging.error(ex, user)
-                return
+        query = 'INSERT INTO records(text_record, date_published, user_id_fk) VALUES($1, $2, (SELECT id FROM users WHERE id = $3))'
+        params = (text_record, datetime.datetime.now(), user.id)
+        try:
+            await self.execute_query(query, *params)
+            logger.debug(f'Пользователь: {user.mention, user.id} успешно добавил запись о событии')
             return True
+        except asyncpg.exceptions.PostgresError as ex:
+            logger.error(ex)
+            return False
 
     async def get_all_records(self, user):
-        if not self._connection:
-            logging.error("Не установлено соединение с БД")
-            return
-        if user.registration is True:
-            tsql = '''SELECT * FROM records WHERE user_id_fk = (SELECT id from users WHERE user_id=%s)'''
+        if not user.registration:
+            return None
 
-            user_id = user.id
-            cursor = self._connection.cursor()
-
-            try:
-                cursor.execute(tsql, [user_id])
-                self._connection.commit()
-                all_records = cursor.fetchall()
-                if all_records:
-                    logging.debug(f'Пользователь: {user.mention, user.id} успешно получил все записи')
-                    return all_records
-
-            except psycopg2.DatabaseError as ex:
-                logging.error(ex, user)
-                return None
+        query = 'SELECT * FROM records WHERE user_id_fk = (SELECT id FROM users WHERE id = $1)'
+        params = (user.id,)
+        all_records = await self.execute_query(query, *params)
+        logger.debug(f'Пользователь: {user.mention, user.id} успешно получил все записи')
+        return all_records
